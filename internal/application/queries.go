@@ -61,13 +61,28 @@ var detailAllowedActions = func() map[domain.Status]map[domain.Role][]string {
 
 func cachedAllowedActions(c *domain.AccessionCase) map[domain.Role][]string {
 	if actions, ok := detailAllowedActions[c.Status]; ok {
-		return actions
+		return copyAllowedActions(actions)
 	}
 	return map[domain.Role][]string{
 		domain.RoleReceiver: AllowedActions(c, domain.RoleReceiver),
 		domain.RoleTester:   AllowedActions(c, domain.RoleTester),
 		domain.RoleReviewer: AllowedActions(c, domain.RoleReviewer),
 	}
+}
+
+// copyAllowedActions returns a deep copy of the cached allowed-actions map so
+// callers cannot mutate the shared package-level cache and pollute subsequent
+// queries. Each role's action slice is copied so that nested map edits, slice
+// truncation or element deletion performed by the caller stay local to the
+// returned value.
+func copyAllowedActions(actions map[domain.Role][]string) map[domain.Role][]string {
+	out := make(map[domain.Role][]string, len(actions))
+	for role, list := range actions {
+		dup := make([]string, len(list))
+		copy(dup, list)
+		out[role] = dup
+	}
+	return out
 }
 
 func (s *Service) GetCase(id string) (*CaseDetail, error) {
