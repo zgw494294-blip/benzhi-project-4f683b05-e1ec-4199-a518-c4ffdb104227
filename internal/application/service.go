@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"time"
 
+	bolt "go.etcd.io/bbolt"
 	"seed-vault-release/internal/domain"
 	"seed-vault-release/internal/repository"
 )
@@ -67,10 +68,26 @@ func mapStoreError(err error) error {
 	return err
 }
 
-func (s *Service) mutate(caseID string, ctx Context, action string, payload any, fn func(*domain.AccessionCase) error) (*domain.AccessionCase, error) {
-	raw, _, err := s.store.MutateCase(caseID, ctx.ExpectedRevision, ctx.IdempotencyKey, action, ctx.Actor, s.id("event"), s.now(), payload, fn)
+func (s *Service) mutate(caseID string, ctx Context, action string, payload any, requestPayload any, fn func(*domain.AccessionCase) error) (*domain.AccessionCase, error) {
+	raw, _, err := s.store.Mutate(caseID, ctx.ExpectedRevision, ctx.IdempotencyKey, action, ctx.Actor, s.id("event"), s.now(), payload, requestDigest(caseID, action, requestPayload), func(c *domain.AccessionCase, _ *bolt.Tx) (json.RawMessage, error) {
+		return nil, fn(c)
+	})
 	if err != nil {
 		return nil, mapStoreError(err)
 	}
 	return decodeCase(raw)
+}
+
+// requestDigest 计算请求指纹摘要：仅当目标、调用身份与业务载荷完全一致的重试才视为同一请求。
+func requestDigest(caseID, action string, requestPayload any) string {
+	body := map[string]any{
+		"action":        action,
+		"caseId":        caseID,
+		"requestPayload": requestPayload,
+	}
+	b, err := json.Marshal(body)
+	if err != nil {
+		return ""
+	}
+	return domain.DigestText(string(b))
 }

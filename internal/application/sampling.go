@@ -11,7 +11,7 @@ func (s *Service) GenerateSampling(caseID string, ctx Context) (*domain.Accessio
 	if err := validateContext(ctx, domain.RoleReceiver); err != nil {
 		return nil, err
 	}
-	return s.mutate(caseID, ctx, "sampling.generated", map[string]any{"ruleVersion": "SVR-2026.1"}, func(c *domain.AccessionCase) error { return c.GenerateSamplingPlan(s.id("sampling")) })
+	return s.mutate(caseID, ctx, "sampling.generated", map[string]any{"ruleVersion": "SVR-2026.1"}, generateSamplingPayload(ctx), func(c *domain.AccessionCase) error { return c.GenerateSamplingPlan(s.id("sampling")) })
 }
 
 func (s *Service) ConfirmSampling(caseID string, cmd ConfirmSamplingCommand) (*domain.AccessionCase, error) {
@@ -35,7 +35,7 @@ func (s *Service) ConfirmSampling(caseID string, cmd ConfirmSamplingCommand) (*d
 		}
 		return map[string]any{"actualCounts": cmd.ActualCounts, "deviationCount": count, "deviationReasonDigests": reasons}
 	})
-	return s.mutate(caseID, cmd.Context, "sampling.confirmed", payload, func(c *domain.AccessionCase) error {
+	return s.mutate(caseID, cmd.Context, "sampling.confirmed", payload, confirmSamplingPayload(cmd), func(c *domain.AccessionCase) error {
 		return c.ConfirmSamplingWithDeviations(cmd.ActualCounts, deviations, cmd.Actor, s.now())
 	})
 }

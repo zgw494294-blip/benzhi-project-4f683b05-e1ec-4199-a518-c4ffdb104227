@@ -11,7 +11,7 @@ func (s *Service) RecordTest(caseID string, cmd RecordTestCommand) (*domain.Acce
 	}
 	in := domain.TestInput{ID: s.id("test"), LotID: cmd.LotID, Type: cmd.TestType, Replicates: cmd.ReplicateCounts, Tested: cmd.TestedCount, Passed: cmd.PassedCount, Contaminated: cmd.ContaminatedCount, Threshold: cmd.Threshold, Actor: cmd.Actor, At: s.now(), IsRetest: cmd.IsRetest}
 	payload := map[string]any{"lotId": cmd.LotID, "testType": cmd.TestType, "testedCount": cmd.TestedCount, "isRetest": cmd.IsRetest}
-	return s.mutate(caseID, cmd.Context, "test.recorded", payload, func(c *domain.AccessionCase) error { _, _, err := c.RecordTest(in); return err })
+	return s.mutate(caseID, cmd.Context, "test.recorded", payload, recordTestPayload(cmd), func(c *domain.AccessionCase) error { _, _, err := c.RecordTest(in); return err })
 }
 
 func (s *Service) RecordTests(caseID string, cmd RecordTestsCommand) (*domain.AccessionCase, error) {
@@ -44,5 +44,5 @@ func (s *Service) RecordTests(caseID string, cmd RecordTestsCommand) (*domain.Ac
 		}
 		return map[string]any{"resultCount": len(inputs), "abnormalCount": abnormal, "affectedLotCodes": codes}
 	})
-	return s.mutate(caseID, cmd.Context, "tests.batch_recorded", payload, func(c *domain.AccessionCase) error { _, _, err := c.RecordTests(inputs); return err })
+	return s.mutate(caseID, cmd.Context, "tests.batch_recorded", payload, recordTestsPayload(cmd), func(c *domain.AccessionCase) error { _, _, err := c.RecordTests(inputs); return err })
 }

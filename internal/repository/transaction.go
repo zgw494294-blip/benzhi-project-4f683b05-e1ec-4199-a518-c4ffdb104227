@@ -17,16 +17,18 @@ type Mutation struct {
 	Case           *domain.AccessionCase
 	Event          audit.Event
 	IdempotencyKey string
+	RequestDigest  string
 	Result         json.RawMessage
 }
 
 type IdempotencyRecord struct {
-	CaseID       string          `json:"caseId"`
-	Action       string          `json:"action"`
-	Result       json.RawMessage `json:"result"`
-	ErrorCode    string          `json:"errorCode,omitempty"`
-	ErrorMessage string          `json:"errorMessage,omitempty"`
-	CreatedAt    time.Time       `json:"createdAt"`
+	CaseID        string          `json:"caseId"`
+	Action        string          `json:"action"`
+	RequestDigest string          `json:"requestDigest,omitempty"`
+	Result        json.RawMessage `json:"result"`
+	ErrorCode     string          `json:"errorCode,omitempty"`
+	ErrorMessage  string          `json:"errorMessage,omitempty"`
+	CreatedAt     time.Time       `json:"createdAt"`
 }
 
 type EventPayloadBuilder func(before, after *domain.AccessionCase) any
@@ -39,6 +41,9 @@ func (s *Store) Create(m Mutation) (json.RawMessage, bool, error) {
 			var rec IdempotencyRecord
 			if err := json.Unmarshal(cached, &rec); err != nil {
 				return fmt.Errorf("损坏的幂等记录: %w", err)
+			}
+			if m.RequestDigest != "" && rec.RequestDigest != "" && rec.RequestDigest != m.RequestDigest {
+				return domain.Conflict("idempotencyKey已用于其他操作")
 			}
 			result, replay = cloneBytes(rec.Result), true
 			return nil
@@ -59,7 +64,7 @@ func (s *Store) Create(m Mutation) (json.RawMessage, bool, error) {
 		if err := putEvent(tx, m.Event); err != nil {
 			return err
 		}
-		if err := putIdempotency(tx, m.IdempotencyKey, m.Case.ID, m.Event.Action, m.Result); err != nil {
+		if err := putIdempotency(tx, m.IdempotencyKey, m.Case.ID, m.Event.Action, m.RequestDigest, m.Result); err != nil {
 			return err
 		}
 		result = cloneBytes(m.Result)
@@ -68,7 +73,7 @@ func (s *Store) Create(m Mutation) (json.RawMessage, bool, error) {
 	return result, replay, err
 }
 
-func (s *Store) Mutate(caseID string, expected uint64, key, action, actor, eventID string, now time.Time, payload any, fn func(*domain.AccessionCase, *bolt.Tx) (json.RawMessage, error)) (json.RawMessage, bool, error) {
+func (s *Store) Mutate(caseID string, expected uint64, key, action, actor, eventID string, now time.Time, payload any, requestDigest string, fn func(*domain.AccessionCase, *bolt.Tx) (json.RawMessage, error)) (json.RawMessage, bool, error) {
 	var result json.RawMessage
 	var replay bool
 	var committedError error
@@ -79,6 +84,9 @@ func (s *Store) Mutate(caseID string, expected uint64, key, action, actor, event
 				return err
 			}
 			if rec.CaseID != caseID || rec.Action != action {
+				return domain.Conflict("idempotencyKey已用于其他操作")
+			}
+			if requestDigest != "" && rec.RequestDigest != "" && rec.RequestDigest != requestDigest {
 				return domain.Conflict("idempotencyKey已用于其他操作")
 			}
 			if rec.ErrorCode != "" {
@@ -109,7 +117,7 @@ func (s *Store) Mutate(caseID string, expected uint64, key, action, actor, event
 		if err != nil {
 			var business *domain.BusinessError
 			if errors.As(err, &business) {
-				if putErr := putIdempotencyFailure(tx, key, caseID, action, business); putErr != nil {
+				if putErr := putIdempotencyFailure(tx, key, caseID, action, requestDigest, business); putErr != nil {
 					return putErr
 				}
 				committedError = business
@@ -143,7 +151,7 @@ func (s *Store) Mutate(caseID string, expected uint64, key, action, actor, event
 		if err := putEvent(tx, event); err != nil {
 			return err
 		}
-		if err := putIdempotency(tx, key, caseID, action, result); err != nil {
+		if err := putIdempotency(tx, key, caseID, action, requestDigest, result); err != nil {
 			return err
 		}
 		return nil
@@ -155,7 +163,7 @@ func (s *Store) Mutate(caseID string, expected uint64, key, action, actor, event
 }
 
 func (s *Store) MutateCase(caseID string, expected uint64, key, action, actor, eventID string, now time.Time, payload any, fn func(*domain.AccessionCase) error) (json.RawMessage, bool, error) {
-	return s.Mutate(caseID, expected, key, action, actor, eventID, now, payload, func(c *domain.AccessionCase, _ *bolt.Tx) (json.RawMessage, error) {
+	return s.Mutate(caseID, expected, key, action, actor, eventID, now, payload, "", func(c *domain.AccessionCase, _ *bolt.Tx) (json.RawMessage, error) {
 		return nil, fn(c)
 	})
 }
@@ -192,19 +200,19 @@ func putEvent(tx *bolt.Tx, event audit.Event) error {
 	return tx.Bucket(bucketAudit).Put(key, b)
 }
 
-func putIdempotency(tx *bolt.Tx, key, caseID, action string, result []byte) error {
+func putIdempotency(tx *bolt.Tx, key, caseID, action, requestDigest string, result []byte) error {
 	if strings.TrimSpace(key) == "" {
 		return domain.Invalid("idempotencyKey不能为空")
 	}
-	rec, _ := json.Marshal(IdempotencyRecord{CaseID: caseID, Action: action, Result: result, CreatedAt: time.Now().UTC()})
+	rec, _ := json.Marshal(IdempotencyRecord{CaseID: caseID, Action: action, RequestDigest: requestDigest, Result: result, CreatedAt: time.Now().UTC()})
 	return tx.Bucket(bucketIdempotency).Put([]byte(key), rec)
 }
 
-func putIdempotencyFailure(tx *bolt.Tx, key, caseID, action string, business *domain.BusinessError) error {
+func putIdempotencyFailure(tx *bolt.Tx, key, caseID, action, requestDigest string, business *domain.BusinessError) error {
 	if strings.TrimSpace(key) == "" {
 		return domain.Invalid("idempotencyKey不能为空")
 	}
-	rec, _ := json.Marshal(IdempotencyRecord{CaseID: caseID, Action: action, ErrorCode: string(business.Code), ErrorMessage: business.Message, CreatedAt: time.Now().UTC()})
+	rec, _ := json.Marshal(IdempotencyRecord{CaseID: caseID, Action: action, RequestDigest: requestDigest, ErrorCode: string(business.Code), ErrorMessage: business.Message, CreatedAt: time.Now().UTC()})
 	return tx.Bucket(bucketIdempotency).Put([]byte(key), rec)
 }
 

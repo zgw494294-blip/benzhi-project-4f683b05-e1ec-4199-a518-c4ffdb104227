@@ -22,7 +22,7 @@ func (s *Service) CreateCase(cmd CreateCaseCommand) (*domain.AccessionCase, erro
 	if err != nil {
 		return nil, err
 	}
-	result, _, err := s.store.Create(repository.Mutation{Case: c, Event: event, IdempotencyKey: cmd.IdempotencyKey, Result: raw})
+	result, _, err := s.store.Create(repository.Mutation{Case: c, Event: event, IdempotencyKey: cmd.IdempotencyKey, RequestDigest: requestDigest("", "case.created", createCasePayload(cmd.Context, cmd)), Result: raw})
 	if err != nil {
 		return nil, mapStoreError(err)
 	}
@@ -34,7 +34,7 @@ func (s *Service) AddLot(caseID string, cmd AddLotCommand) (*domain.AccessionCas
 		return nil, err
 	}
 	lot := domain.SeedLot{ID: s.id("lot"), LotCode: cmd.LotCode, ContainerCode: cmd.ContainerCode, SeedCount: cmd.SeedCount, MoisturePercent: cmd.MoisturePercent, ArrivalCondition: cmd.ArrivalCondition, ReservedCount: cmd.ReservedCount}
-	return s.mutate(caseID, cmd.Context, "lot.added", map[string]any{"lotCode": cmd.LotCode, "seedCount": cmd.SeedCount}, func(c *domain.AccessionCase) error { return c.AddLot(lot) })
+	return s.mutate(caseID, cmd.Context, "lot.added", map[string]any{"lotCode": cmd.LotCode, "seedCount": cmd.SeedCount}, addLotPayload(cmd), func(c *domain.AccessionCase) error { return c.AddLot(lot) })
 }
 
 func (s *Service) ReviseCase(caseID string, cmd ReviseCaseCommand) (*domain.AccessionCase, error) {
@@ -50,7 +50,7 @@ func (s *Service) ReviseCase(caseID string, cmd ReviseCaseCommand) (*domain.Acce
 		}
 		return summary
 	})
-	return s.mutate(caseID, cmd.Context, "case.base_data_revised", payload, func(c *domain.AccessionCase) error {
+	return s.mutate(caseID, cmd.Context, "case.base_data_revised", payload, reviseCasePayload(cmd), func(c *domain.AccessionCase) error {
 		species, site, collected, received, owner := c.SpeciesName, c.CollectionSite, c.CollectedAt, c.ReceivedAt, c.Owner
 		if cmd.SpeciesName != nil {
 			species = *cmd.SpeciesName
@@ -83,5 +83,5 @@ func (s *Service) AddLots(caseID string, cmd AddLotsCommand) (*domain.AccessionC
 		codes[i] = item.LotCode
 	}
 	payload := map[string]any{"successCount": len(lots), "lotCodes": codes}
-	return s.mutate(caseID, cmd.Context, "lots.batch_added", payload, func(c *domain.AccessionCase) error { return c.AddLots(lots) })
+	return s.mutate(caseID, cmd.Context, "lots.batch_added", payload, addLotsPayload(cmd), func(c *domain.AccessionCase) error { return c.AddLots(lots) })
 }
