@@ -78,6 +78,10 @@ func (s *Service) ReviseCase(caseID string, cmd ReviseCaseCommand) (*domain.Acce
 }
 
 func (s *Service) AddLots(caseID string, cmd AddLotsCommand) (*domain.AccessionCase, error) {
+	return s.AddLotsContext(context.Background(), caseID, cmd)
+}
+
+func (s *Service) AddLotsContext(requestContext context.Context, caseID string, cmd AddLotsCommand) (*domain.AccessionCase, error) {
 	if err := validateContext(cmd.Context, domain.RoleReceiver); err != nil {
 		return nil, err
 	}
@@ -88,5 +92,5 @@ func (s *Service) AddLots(caseID string, cmd AddLotsCommand) (*domain.AccessionC
 		codes[i] = item.LotCode
 	}
 	payload := map[string]any{"successCount": len(lots), "lotCodes": codes}
-	return s.mutate(caseID, cmd.Context, "lots.batch_added", payload, func(c *domain.AccessionCase) error { return c.AddLots(lots) })
+	return s.mutateContext(requestContext, caseID, cmd.Context, "lots.batch_added", payload, func(c *domain.AccessionCase) error { return c.AddLots(lots) })
 }

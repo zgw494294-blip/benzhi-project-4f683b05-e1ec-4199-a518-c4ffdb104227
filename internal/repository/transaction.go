@@ -165,7 +165,100 @@ func (s *Store) MutateCaseContext(ctx context.Context, caseID string, expected u
 	if err := ctx.Err(); err != nil {
 		return nil, false, err
 	}
-	return s.MutateCase(caseID, expected, key, action, actor, eventID, now, payload, fn)
+	return s.mutateContext(ctx, caseID, expected, key, action, actor, eventID, now, payload, fn)
+}
+
+// mutateContext performs a mutation while honoring request cancellation. After
+// the business function succeeds but before any aggregate, audit event or
+// idempotency record is persisted, the request context is re-checked. A
+// cancellation that arrives after processing started but before the
+// transaction commits causes the whole transaction to roll back, leaving the
+// case revision, audit timeline and idempotency store untouched.
+func (s *Store) mutateContext(ctx context.Context, caseID string, expected uint64, key, action, actor, eventID string, now time.Time, payload any, fn func(*domain.AccessionCase) error) (json.RawMessage, bool, error) {
+	var result json.RawMessage
+	var replay bool
+	var committedError error
+	err := s.db.Update(func(tx *bolt.Tx) error {
+		if cached := tx.Bucket(bucketIdempotency).Get([]byte(key)); cached != nil {
+			var rec IdempotencyRecord
+			if err := json.Unmarshal(cached, &rec); err != nil {
+				return err
+			}
+			if rec.CaseID != caseID || rec.Action != action {
+				return domain.Conflict("idempotencyKey已用于其他操作")
+			}
+			if rec.ErrorCode != "" {
+				committedError = &domain.BusinessError{Code: domain.ErrorCode(rec.ErrorCode), Message: rec.ErrorMessage}
+				replay = true
+				return nil
+			}
+			result, replay = cloneBytes(rec.Result), true
+			return nil
+		}
+		current, err := loadCase(tx, caseID)
+		if err != nil {
+			return err
+		}
+		if current.Revision != expected {
+			return ErrRevision
+		}
+		beforeStatus := current.Status
+		beforeBytes, err := json.Marshal(current)
+		if err != nil {
+			return err
+		}
+		var before domain.AccessionCase
+		if err := json.Unmarshal(beforeBytes, &before); err != nil {
+			return err
+		}
+		if err := fn(current); err != nil {
+			var business *domain.BusinessError
+			if errors.As(err, &business) {
+				if putErr := putIdempotencyFailure(tx, key, caseID, action, business); putErr != nil {
+					return putErr
+				}
+				committedError = business
+				return nil
+			}
+			return err
+		}
+		// 请求在事务处理过程中被取消时，必须拒绝提交，使案卷、审计时间线与幂等结果保持不变。
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		current.Revision++
+		current.UpdatedAt = now.UTC()
+		result, err = json.Marshal(current)
+		if err != nil {
+			return err
+		}
+		events, err := loadTimeline(tx, caseID)
+		if err != nil {
+			return err
+		}
+		eventPayload := payload
+		if builder, ok := payload.(EventPayloadBuilder); ok {
+			eventPayload = builder(&before, current)
+		}
+		event, err := audit.NewEvent(eventID, caseID, actor, action, current.Revision, uint64(len(events)+1), now, eventPayload, audit.LastDigest(events))
+		if err != nil {
+			return err
+		}
+		if err := putAggregate(tx, &beforeStatus, current); err != nil {
+			return err
+		}
+		if err := putEvent(tx, event); err != nil {
+			return err
+		}
+		if err := putIdempotency(tx, key, caseID, action, result); err != nil {
+			return err
+		}
+		return nil
+	})
+	if err == nil && committedError != nil {
+		return nil, replay, committedError
+	}
+	return result, replay, err
 }
 
 func putAggregate(tx *bolt.Tx, before *domain.Status, c *domain.AccessionCase) error {

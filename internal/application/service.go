@@ -56,6 +56,12 @@ func mapStoreError(err error) error {
 	if err == nil {
 		return nil
 	}
+	if errors.Is(err, context.Canceled) {
+		return domain.Conflict("请求已取消")
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return domain.Conflict("请求超时")
+	}
 	if errors.Is(err, repository.ErrRevision) {
 		return domain.Conflict("expectedRevision与当前案卷版本不一致")
 	}

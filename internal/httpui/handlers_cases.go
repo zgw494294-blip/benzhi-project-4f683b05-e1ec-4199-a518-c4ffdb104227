@@ -90,7 +90,7 @@ func (s *Server) HandleAddLots(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, err)
 		return
 	}
-	c, err := s.app.AddLots(r.PathValue("caseID"), cmd)
+	c, err := s.app.AddLotsContext(r.Context(), r.PathValue("caseID"), cmd)
 	if err != nil {
 		writeError(w, r, err)
 		return
