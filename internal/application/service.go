@@ -75,5 +75,6 @@ func (s *Service) mutate(caseID string, ctx Context, action string, payload any,
 	if err != nil {
 		return nil, mapStoreError(err)
 	}
+	s.invalidateTimeline(caseID)
 	return decodeCase(raw)
 }

@@ -46,8 +46,9 @@ type CertificateVerification struct {
 }
 
 type cachedTimeline struct {
-	caseID string
-	events []audit.Event
+	caseID   string
+	revision uint64
+	events   []audit.Event
 }
 
 func cloneEvents(events []audit.Event) []audit.Event {
@@ -58,9 +59,20 @@ func cloneEvents(events []audit.Event) []audit.Event {
 	return cloned
 }
 
-func (s *Service) timelineForCase(caseID string) ([]audit.Event, error) {
+// invalidateTimeline drops any cached timeline for the given case. Mutations
+// append audit events and bump the case revision, so a previously cached
+// timeline can never represent the current version and must not be reused.
+func (s *Service) invalidateTimeline(caseID string) {
 	s.timelineCacheMu.Lock()
+	defer s.timelineCacheMu.Unlock()
 	if s.timelineCache.caseID == caseID {
+		s.timelineCache = cachedTimeline{}
+	}
+}
+
+func (s *Service) timelineForCase(caseID string, revision uint64) ([]audit.Event, error) {
+	s.timelineCacheMu.Lock()
+	if s.timelineCache.caseID == caseID && s.timelineCache.revision == revision && revision != 0 {
 		events := cloneEvents(s.timelineCache.events)
 		s.timelineCacheMu.Unlock()
 		return events, nil
@@ -72,7 +84,7 @@ func (s *Service) timelineForCase(caseID string) ([]audit.Event, error) {
 		return nil, err
 	}
 	s.timelineCacheMu.Lock()
-	s.timelineCache = cachedTimeline{caseID: caseID, events: cloneEvents(events)}
+	s.timelineCache = cachedTimeline{caseID: caseID, revision: revision, events: cloneEvents(events)}
 	s.timelineCacheMu.Unlock()
 	return events, nil
 }
@@ -85,7 +97,7 @@ func (s *Service) GetCase(id string) (*CaseDetail, error) {
 	for i := range c.Findings {
 		c.Findings[i].Timeliness = c.Findings[i].Timing(s.now())
 	}
-	events, err := s.timelineForCase(id)
+	events, err := s.timelineForCase(id, c.Revision)
 	if err != nil {
 		return nil, err
 	}
@@ -107,8 +119,24 @@ func (s *Service) GetCase(id string) (*CaseDetail, error) {
 	}
 	if err := audit.Validate(events); err != nil {
 		detail.AuditValid, detail.AuditMessage = false, err.Error()
+	} else if !timelineMatchesRevision(events, c.Revision) {
+		// The digest chain may be internally consistent yet still reference an
+		// older case version (for example a truncated cached timeline). Such a
+		// timeline cannot validate the current case revision and must not be
+		// reported as valid.
+		detail.AuditValid, detail.AuditMessage = false, "审计时间线与当前案卷版本不匹配"
 	}
 	return detail, nil
+}
+
+// timelineMatchesRevision reports whether the audit timeline is complete for
+// the given case revision: it must contain at least one event and the last
+// event's CaseRevision must equal the current case Revision.
+func timelineMatchesRevision(events []audit.Event, revision uint64) bool {
+	if len(events) == 0 || revision == 0 {
+		return false
+	}
+	return events[len(events)-1].CaseRevision == revision
 }
 
 func (s *Service) ListCases(status domain.Status) ([]domain.AccessionCase, error) {
