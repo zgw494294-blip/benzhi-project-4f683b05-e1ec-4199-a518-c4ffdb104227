@@ -219,9 +219,9 @@ func passMessage(ok bool, pass, fail string) string {
 }
 
 func sameCertificate(a, b *domain.ReleaseCertificate) bool {
-	return a != nil && b != nil && a.ID == b.ID && a.CaseID == b.CaseID && a.SerialNumber == b.SerialNumber && a.ManifestDigest == b.ManifestDigest && a.CaseRevision == b.CaseRevision && a.ApprovedBy == b.ApprovedBy && a.IssuedAt.Equal(b.IssuedAt)
+	return domain.CertificateMatches(a, b)
 }
 
 func sameManifest(a, b *domain.FrozenManifest) bool {
-	return a != nil && b != nil && a.CanonicalJSON == b.CanonicalJSON && a.Digest == b.Digest && a.FrozenBy == b.FrozenBy && a.FrozenAt.Equal(b.FrozenAt)
+	return domain.ManifestMatches(a, b)
 }

@@ -18,6 +18,25 @@ func (c *AccessionCase) IssueCertificate(id string, serial uint64, actor string,
 	return cert, nil
 }
 
+// CertificateMatches reports whether two release certificates agree on every
+// protected field: identifier, case binding, serial number, manifest digest,
+// signed case revision, approver and issuance time.
+func CertificateMatches(a, b *ReleaseCertificate) bool {
+	if a == nil || b == nil {
+		return false
+	}
+	return a.ID == b.ID && a.CaseID == b.CaseID && a.SerialNumber == b.SerialNumber && a.ManifestDigest == b.ManifestDigest && a.CaseRevision == b.CaseRevision && a.ApprovedBy == b.ApprovedBy && a.IssuedAt.Equal(b.IssuedAt)
+}
+
+// ManifestMatches reports whether two frozen manifests agree on canonical JSON,
+// digest, frozen-by actor and frozen-at time.
+func ManifestMatches(a, b *FrozenManifest) bool {
+	if a == nil || b == nil {
+		return false
+	}
+	return a.CanonicalJSON == b.CanonicalJSON && a.Digest == b.Digest && a.FrozenBy == b.FrozenBy && a.FrozenAt.Equal(b.FrozenAt)
+}
+
 func VerifyCertificate(c *AccessionCase) (bool, string) {
 	if c.Certificate == nil || c.FrozenManifest == nil {
 		return false, "凭据或冻结清单不存在"
@@ -31,6 +50,12 @@ func VerifyCertificate(c *AccessionCase) (bool, string) {
 	}
 	if c.Status != StatusReleased {
 		return false, "案卷并非已放行状态"
+	}
+	if c.Certificate.CaseID != c.ID {
+		return false, "凭据案卷标识不一致"
+	}
+	if c.Certificate.ApprovedBy == "" {
+		return false, "凭据缺少签发人"
 	}
 	return true, "凭据有效，冻结清单摘要一致"
 }

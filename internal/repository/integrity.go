@@ -3,6 +3,7 @@ package repository
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 
 	bolt "go.etcd.io/bbolt"
 	"seed-vault-release/internal/audit"
@@ -52,9 +53,28 @@ func (s *Store) CheckIntegrity() (IntegrityReport, error) {
 					report.Errors = append(report.Errors, "已放行案卷"+c.ID+"缺少凭据或清单")
 					return nil
 				}
-				stored := tx.Bucket(bucketCertificates).Get(certificateKey(c.Certificate.SerialNumber))
-				if stored == nil {
+				storedCertBytes := tx.Bucket(bucketCertificates).Get(certificateKey(c.Certificate.SerialNumber))
+				if storedCertBytes == nil {
 					report.Errors = append(report.Errors, "已放行案卷"+c.ID+"缺少只追加凭据记录")
+				} else {
+					var storedCert domain.ReleaseCertificate
+					if err := json.Unmarshal(storedCertBytes, &storedCert); err != nil {
+						report.Errors = append(report.Errors, "已放行案卷"+c.ID+"只追加凭据记录无法解码")
+					} else if !domain.CertificateMatches(&storedCert, c.Certificate) {
+						report.Errors = append(report.Errors, "已放行案卷"+c.ID+"只追加凭据记录与案卷内凭据不一致")
+					}
+				}
+				manifestKey := []byte(strconv.FormatUint(c.Certificate.SerialNumber, 10))
+				storedManifestBytes := tx.Bucket(bucketManifests).Get(manifestKey)
+				if storedManifestBytes == nil {
+					report.Errors = append(report.Errors, "已放行案卷"+c.ID+"缺少只追加冻结清单记录")
+				} else {
+					var storedManifest domain.FrozenManifest
+					if err := json.Unmarshal(storedManifestBytes, &storedManifest); err != nil {
+						report.Errors = append(report.Errors, "已放行案卷"+c.ID+"只追加冻结清单记录无法解码")
+					} else if !domain.ManifestMatches(&storedManifest, c.FrozenManifest) {
+						report.Errors = append(report.Errors, "已放行案卷"+c.ID+"只追加冻结清单记录与案卷内清单不一致")
+					}
 				}
 				valid, message := domain.VerifyCertificate(&c)
 				if !valid {
