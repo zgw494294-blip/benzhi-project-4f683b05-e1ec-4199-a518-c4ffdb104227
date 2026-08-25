@@ -245,3 +245,13 @@ func AllocateCertificate(tx *bolt.Tx, cert *domain.ReleaseCertificate, manifest 
 	}
 	return serial, nil
 }
+
+func (s *Store) AllocateCertificateRecord(cert *domain.ReleaseCertificate, manifest *domain.FrozenManifest) (uint64, error) {
+	var serial uint64
+	err := s.db.Update(func(tx *bolt.Tx) error {
+		var err error
+		serial, err = AllocateCertificate(tx, cert, manifest)
+		return err
+	})
+	return serial, err
+}
