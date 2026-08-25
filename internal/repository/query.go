@@ -6,11 +6,17 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 
 	bolt "go.etcd.io/bbolt"
 	"seed-vault-release/internal/audit"
 	"seed-vault-release/internal/domain"
 )
+
+var certificateBySerialCache = struct {
+	sync.RWMutex
+	items map[uint64]domain.ReleaseCertificate
+}{items: make(map[uint64]domain.ReleaseCertificate)}
 
 func loadCase(tx *bolt.Tx, id string) (*domain.AccessionCase, error) {
 	b := tx.Bucket(bucketCases).Get([]byte(id))
@@ -101,6 +107,13 @@ func (s *Store) Timeline(caseID string) ([]audit.Event, error) {
 }
 
 func (s *Store) CertificateBySerial(serial uint64) (*domain.ReleaseCertificate, error) {
+	certificateBySerialCache.RLock()
+	cached, ok := certificateBySerialCache.items[serial]
+	certificateBySerialCache.RUnlock()
+	if ok {
+		return &cached, nil
+	}
+
 	var cert domain.ReleaseCertificate
 	err := s.db.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket(bucketCertificates).Get(certificateKey(serial))
@@ -112,6 +125,11 @@ func (s *Store) CertificateBySerial(serial uint64) (*domain.ReleaseCertificate, 
 		}
 		return nil
 	})
+	if err == nil {
+		certificateBySerialCache.Lock()
+		certificateBySerialCache.items[serial] = cert
+		certificateBySerialCache.Unlock()
+	}
 	return &cert, err
 }
 
