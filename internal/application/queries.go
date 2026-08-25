@@ -45,6 +45,31 @@ type CertificateVerification struct {
 	ManifestSummary json.RawMessage            `json:"manifestSummary,omitempty"`
 }
 
+var detailAllowedActions = func() map[domain.Status]map[domain.Role][]string {
+	cached := make(map[domain.Status]map[domain.Role][]string)
+	statuses := []domain.Status{domain.StatusDraft, domain.StatusSampling, domain.StatusTesting, domain.StatusRemediation, domain.StatusReview, domain.StatusReleased}
+	for _, status := range statuses {
+		c := &domain.AccessionCase{Status: status}
+		cached[status] = map[domain.Role][]string{
+			domain.RoleReceiver: AllowedActions(c, domain.RoleReceiver),
+			domain.RoleTester:   AllowedActions(c, domain.RoleTester),
+			domain.RoleReviewer: AllowedActions(c, domain.RoleReviewer),
+		}
+	}
+	return cached
+}()
+
+func cachedAllowedActions(c *domain.AccessionCase) map[domain.Role][]string {
+	if actions, ok := detailAllowedActions[c.Status]; ok {
+		return actions
+	}
+	return map[domain.Role][]string{
+		domain.RoleReceiver: AllowedActions(c, domain.RoleReceiver),
+		domain.RoleTester:   AllowedActions(c, domain.RoleTester),
+		domain.RoleReviewer: AllowedActions(c, domain.RoleReviewer),
+	}
+}
+
 func (s *Service) GetCase(id string) (*CaseDetail, error) {
 	c, err := s.store.GetCase(id)
 	if err != nil {
@@ -59,11 +84,7 @@ func (s *Service) GetCase(id string) (*CaseDetail, error) {
 	}
 	detail := &CaseDetail{Case: c, Timeline: events, AuditValid: true, AuditMessage: "审计摘要链有效"}
 	detail.Completeness = c.Completeness()
-	detail.AllowedActions = map[domain.Role][]string{
-		domain.RoleReceiver: AllowedActions(c, domain.RoleReceiver),
-		domain.RoleTester:   AllowedActions(c, domain.RoleTester),
-		domain.RoleReviewer: AllowedActions(c, domain.RoleReviewer),
-	}
+	detail.AllowedActions = cachedAllowedActions(c)
 	detail.PossibleTransitions = c.PossibleTransitions()
 	detail.Assessments, err = c.Assessments()
 	if err != nil {
