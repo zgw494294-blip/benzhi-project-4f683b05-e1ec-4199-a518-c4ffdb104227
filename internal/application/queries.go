@@ -45,6 +45,38 @@ type CertificateVerification struct {
 	ManifestSummary json.RawMessage            `json:"manifestSummary,omitempty"`
 }
 
+type cachedTimeline struct {
+	caseID string
+	events []audit.Event
+}
+
+func cloneEvents(events []audit.Event) []audit.Event {
+	cloned := append([]audit.Event(nil), events...)
+	for i := range cloned {
+		cloned[i].Payload = append(json.RawMessage(nil), events[i].Payload...)
+	}
+	return cloned
+}
+
+func (s *Service) timelineForCase(caseID string) ([]audit.Event, error) {
+	s.timelineCacheMu.Lock()
+	if s.timelineCache.caseID == caseID {
+		events := cloneEvents(s.timelineCache.events)
+		s.timelineCacheMu.Unlock()
+		return events, nil
+	}
+	s.timelineCacheMu.Unlock()
+
+	events, err := s.store.Timeline(caseID)
+	if err != nil {
+		return nil, err
+	}
+	s.timelineCacheMu.Lock()
+	s.timelineCache = cachedTimeline{caseID: caseID, events: cloneEvents(events)}
+	s.timelineCacheMu.Unlock()
+	return events, nil
+}
+
 func (s *Service) GetCase(id string) (*CaseDetail, error) {
 	c, err := s.store.GetCase(id)
 	if err != nil {
@@ -53,7 +85,7 @@ func (s *Service) GetCase(id string) (*CaseDetail, error) {
 	for i := range c.Findings {
 		c.Findings[i].Timeliness = c.Findings[i].Timing(s.now())
 	}
-	events, err := s.store.Timeline(id)
+	events, err := s.timelineForCase(id)
 	if err != nil {
 		return nil, err
 	}

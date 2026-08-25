@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"seed-vault-release/internal/domain"
@@ -13,9 +14,11 @@ import (
 )
 
 type Service struct {
-	store *repository.Store
-	now   func() time.Time
-	id    func(string) string
+	store           *repository.Store
+	now             func() time.Time
+	id              func(string) string
+	timelineCacheMu sync.Mutex
+	timelineCache   cachedTimeline
 }
 
 func New(store *repository.Store) *Service {
