@@ -1,6 +1,7 @@
 package application
 
 import (
+	"context"
 	"encoding/json"
 	"seed-vault-release/internal/audit"
 	"seed-vault-release/internal/domain"
@@ -30,11 +31,15 @@ func (s *Service) CreateCase(cmd CreateCaseCommand) (*domain.AccessionCase, erro
 }
 
 func (s *Service) AddLot(caseID string, cmd AddLotCommand) (*domain.AccessionCase, error) {
+	return s.AddLotContext(context.Background(), caseID, cmd)
+}
+
+func (s *Service) AddLotContext(requestContext context.Context, caseID string, cmd AddLotCommand) (*domain.AccessionCase, error) {
 	if err := validateContext(cmd.Context, domain.RoleReceiver); err != nil {
 		return nil, err
 	}
 	lot := domain.SeedLot{ID: s.id("lot"), LotCode: cmd.LotCode, ContainerCode: cmd.ContainerCode, SeedCount: cmd.SeedCount, MoisturePercent: cmd.MoisturePercent, ArrivalCondition: cmd.ArrivalCondition, ReservedCount: cmd.ReservedCount}
-	return s.mutate(caseID, cmd.Context, "lot.added", map[string]any{"lotCode": cmd.LotCode, "seedCount": cmd.SeedCount}, func(c *domain.AccessionCase) error { return c.AddLot(lot) })
+	return s.mutateContext(requestContext, caseID, cmd.Context, "lot.added", map[string]any{"lotCode": cmd.LotCode, "seedCount": cmd.SeedCount}, func(c *domain.AccessionCase) error { return c.AddLot(lot) })
 }
 
 func (s *Service) ReviseCase(caseID string, cmd ReviseCaseCommand) (*domain.AccessionCase, error) {

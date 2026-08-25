@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -158,6 +159,13 @@ func (s *Store) MutateCase(caseID string, expected uint64, key, action, actor, e
 	return s.Mutate(caseID, expected, key, action, actor, eventID, now, payload, func(c *domain.AccessionCase, _ *bolt.Tx) (json.RawMessage, error) {
 		return nil, fn(c)
 	})
+}
+
+func (s *Store) MutateCaseContext(ctx context.Context, caseID string, expected uint64, key, action, actor, eventID string, now time.Time, payload any, fn func(*domain.AccessionCase) error) (json.RawMessage, bool, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, false, err
+	}
+	return s.MutateCase(caseID, expected, key, action, actor, eventID, now, payload, fn)
 }
 
 func putAggregate(tx *bolt.Tx, before *domain.Status, c *domain.AccessionCase) error {

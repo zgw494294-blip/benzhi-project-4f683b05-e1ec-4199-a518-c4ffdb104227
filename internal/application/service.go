@@ -1,6 +1,7 @@
 package application
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -69,6 +70,14 @@ func mapStoreError(err error) error {
 
 func (s *Service) mutate(caseID string, ctx Context, action string, payload any, fn func(*domain.AccessionCase) error) (*domain.AccessionCase, error) {
 	raw, _, err := s.store.MutateCase(caseID, ctx.ExpectedRevision, ctx.IdempotencyKey, action, ctx.Actor, s.id("event"), s.now(), payload, fn)
+	if err != nil {
+		return nil, mapStoreError(err)
+	}
+	return decodeCase(raw)
+}
+
+func (s *Service) mutateContext(requestContext context.Context, caseID string, ctx Context, action string, payload any, fn func(*domain.AccessionCase) error) (*domain.AccessionCase, error) {
+	raw, _, err := s.store.MutateCaseContext(requestContext, caseID, ctx.ExpectedRevision, ctx.IdempotencyKey, action, ctx.Actor, s.id("event"), s.now(), payload, fn)
 	if err != nil {
 		return nil, mapStoreError(err)
 	}
