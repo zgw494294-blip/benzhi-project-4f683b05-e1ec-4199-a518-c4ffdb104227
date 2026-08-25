@@ -28,8 +28,27 @@ func loadCase(tx *bolt.Tx, id string) (*domain.AccessionCase, error) {
 }
 
 func (s *Store) GetCase(id string) (*domain.AccessionCase, error) {
+	s.caseCacheMu.RLock()
+	cached := cloneBytes(s.caseCache[id])
+	s.caseCacheMu.RUnlock()
+	if cached != nil {
+		var c domain.AccessionCase
+		if err := json.Unmarshal(cached, &c); err != nil {
+			return nil, &domain.BusinessError{Code: domain.CodeCorrupt, Message: "案卷缓存损坏"}
+		}
+		return &c, nil
+	}
 	var c *domain.AccessionCase
 	err := s.db.View(func(tx *bolt.Tx) error { var err error; c, err = loadCase(tx, id); return err })
+	if err == nil {
+		encoded, marshalErr := json.Marshal(c)
+		if marshalErr != nil {
+			return nil, marshalErr
+		}
+		s.caseCacheMu.Lock()
+		s.caseCache[id] = cloneBytes(encoded)
+		s.caseCacheMu.Unlock()
+	}
 	return c, err
 }
 

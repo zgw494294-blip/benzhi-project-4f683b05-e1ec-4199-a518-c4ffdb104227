@@ -72,6 +72,7 @@ func (s *Store) Mutate(caseID string, expected uint64, key, action, actor, event
 	var result json.RawMessage
 	var replay bool
 	var committedError error
+	s.invalidateCase(caseID)
 	err := s.db.Update(func(tx *bolt.Tx) error {
 		if cached := tx.Bucket(bucketIdempotency).Get([]byte(key)); cached != nil {
 			var rec IdempotencyRecord

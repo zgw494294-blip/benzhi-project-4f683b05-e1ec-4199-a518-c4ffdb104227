@@ -5,12 +5,18 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	bolt "go.etcd.io/bbolt"
 )
 
-type Store struct{ db *bolt.DB }
+type Store struct {
+	db *bolt.DB
+
+	caseCacheMu sync.RWMutex
+	caseCache   map[string][]byte
+}
 
 func Open(path string) (*Store, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
@@ -24,13 +30,19 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("初始化数据库: %w", err)
 	}
-	return &Store{db: db}, nil
+	return &Store{db: db, caseCache: make(map[string][]byte)}, nil
 }
 
 func (s *Store) Close() error { return s.db.Close() }
 
 func (s *Store) View(fn func(*bolt.Tx) error) error   { return s.db.View(fn) }
 func (s *Store) Update(fn func(*bolt.Tx) error) error { return s.db.Update(fn) }
+
+func (s *Store) invalidateCase(id string) {
+	s.caseCacheMu.Lock()
+	delete(s.caseCache, id)
+	s.caseCacheMu.Unlock()
+}
 
 func cloneBytes(in []byte) []byte {
 	if in == nil {
