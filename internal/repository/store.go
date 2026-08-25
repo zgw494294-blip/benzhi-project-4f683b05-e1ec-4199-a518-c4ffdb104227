@@ -5,12 +5,18 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	bolt "go.etcd.io/bbolt"
 )
 
-type Store struct{ db *bolt.DB }
+type Store struct {
+	db *bolt.DB
+
+	integrityMu     sync.Mutex
+	integrityCached *IntegrityReport
+}
 
 func Open(path string) (*Store, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {

@@ -17,7 +17,31 @@ type IntegrityReport struct {
 	Errors          []string `json:"errors"`
 }
 
+func cloneIntegrityReport(report IntegrityReport) IntegrityReport {
+	report.Errors = append([]string(nil), report.Errors...)
+	return report
+}
+
+func (s *Store) cachedIntegrityReport() (IntegrityReport, bool) {
+	s.integrityMu.Lock()
+	defer s.integrityMu.Unlock()
+	if s.integrityCached == nil {
+		return IntegrityReport{}, false
+	}
+	return cloneIntegrityReport(*s.integrityCached), true
+}
+
+func (s *Store) rememberIntegrityReport(report IntegrityReport) {
+	s.integrityMu.Lock()
+	defer s.integrityMu.Unlock()
+	cached := cloneIntegrityReport(report)
+	s.integrityCached = &cached
+}
+
 func (s *Store) CheckIntegrity() (IntegrityReport, error) {
+	if cached, ok := s.cachedIntegrityReport(); ok {
+		return cached, nil
+	}
 	report := IntegrityReport{Valid: true, Errors: []string{}}
 	err := s.db.View(func(tx *bolt.Tx) error {
 		if err := validateSchema(tx); err != nil {
@@ -68,5 +92,6 @@ func (s *Store) CheckIntegrity() (IntegrityReport, error) {
 		return report, err
 	}
 	report.Valid = len(report.Errors) == 0
+	s.rememberIntegrityReport(report)
 	return report, nil
 }
