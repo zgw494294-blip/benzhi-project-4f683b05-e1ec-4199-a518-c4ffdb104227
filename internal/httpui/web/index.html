@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>种质入藏放行工作台</title>
+  <link rel="stylesheet" href="/assets/app.css">
+  <link rel="stylesheet" href="/assets/workflow.css">
+</head>
+<body>
+  <header class="topbar">
+    <div><span class="mark">SV</span><div><h1>种质入藏放行工作台</h1><p>从到库登记到不可变保藏凭据</p></div></div>
+    <div class="identity"><label>当前人员<input id="actor" value="接收员甲"></label><label>岗位<select id="role"><option value="receiver">种质接收员</option><option value="tester">发芽检验员</option><option value="reviewer">保藏审核员</option></select></label></div>
+  </header>
+  <main>
+    <aside class="sidebar">
+      <button id="new-case" class="primary">＋ 新建入藏案卷</button>
+      <div class="filters"><button data-status="" class="active">全部</button><button data-status="待抽样">待抽样</button><button data-status="检验中">检验中</button><button data-status="整改中">整改中</button><button data-status="待审核">待审核</button><button data-status="已放行">已放行</button></div>
+      <label class="side-field">发现项时效<select id="timeliness-filter"><option value="">全部时效</option><option>未到期</option><option>临期</option><option>逾期</option><option>未设置</option></select></label>
+      <div id="case-list" class="case-list" aria-live="polite"></div>
+      <form id="credential-search" class="verify-box"><strong>放行凭据核验</strong><label>精确条件<select name="kind"><option value="serialNumber">凭据序号</option><option value="accessionCode">案卷编号</option><option value="manifestDigest">完整清单摘要</option></select></label><input name="value" required placeholder="输入一种精确条件"><button>核验并对照清单</button><div id="verify-result"></div></form>
+    </aside>
+    <section class="workspace">
+      <div id="empty" class="empty"><div class="seed">◉</div><h2>选择案卷开始工作</h2><p>左侧展示当前入藏案卷，也可以创建一份新案卷。</p></div>
+      <div id="detail" hidden>
+        <div class="detail-head"><div><p id="case-code" class="eyebrow"></p><h2 id="case-title"></h2><p id="case-meta"></p><button id="edit-case">修订基础资料</button></div><span id="case-status" class="badge"></span></div>
+        <ol id="steps" class="steps"><li>到库建档</li><li>批次登记</li><li>抽样确认</li><li>检验</li><li>异常整改</li><li>审核放行</li></ol>
+        <div class="grid">
+          <section class="panel"><div class="panel-title"><h3>批次与抽样</h3><button id="add-lot">批量登记</button></div><div id="lots"></div><div id="sampling"></div></section>
+          <section class="panel"><div class="panel-title"><h3>检验矩阵与发现项</h3><button id="add-test">批量录入缺项</button></div><div id="tests"></div><div id="findings"></div></section>
+          <section class="panel full"><div class="panel-title"><h3>审核、凭据与时间线</h3><button id="approve">审核放行</button></div><div id="certificate"></div><div id="timeline" class="timeline"></div></section>
+        </div>
+      </div>
+    </section>
+  </main>
+  <dialog id="dialog"><form id="dialog-form" method="dialog"><div class="dialog-head"><h2 id="dialog-title"></h2><button type="button" id="dialog-close" aria-label="关闭">×</button></div><div id="dialog-fields"></div><div class="dialog-actions"><button type="button" id="dialog-cancel">取消</button><button class="primary" value="submit">提交</button></div></form></dialog>
+  <div id="toast" role="status" aria-live="polite"></div>
+  <script src="/assets/app.js" defer></script>
+</body>
+</html>
