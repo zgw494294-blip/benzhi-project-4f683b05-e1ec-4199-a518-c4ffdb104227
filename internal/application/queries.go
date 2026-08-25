@@ -90,9 +90,14 @@ func (s *Service) ListCasesByFindingTiming(status domain.Status, timing string) 
 	if timing != "" && timing != "未到期" && timing != "临期" && timing != "逾期" && timing != "未设置" {
 		return nil, domain.Invalid("未知发现项时效状态%s", timing)
 	}
-	items, err := s.store.ListCases(status)
-	if err != nil {
-		return nil, err
+	items, cached, epoch := s.cachedCaseList(status)
+	if !cached {
+		loaded, err := s.store.ListCases(status)
+		if err != nil {
+			return nil, err
+		}
+		items = loaded
+		s.rememberCaseList(status, epoch, items)
 	}
 	result := make([]domain.AccessionCase, 0, len(items))
 	for _, item := range items {

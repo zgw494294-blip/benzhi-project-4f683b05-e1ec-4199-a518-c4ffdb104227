@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"seed-vault-release/internal/domain"
@@ -13,13 +14,21 @@ import (
 )
 
 type Service struct {
-	store *repository.Store
-	now   func() time.Time
-	id    func(string) string
+	store         *repository.Store
+	now           func() time.Time
+	id            func(string) string
+	caseListMu    sync.RWMutex
+	caseListEpoch uint64
+	caseListCache map[domain.Status]caseListCacheEntry
+}
+
+type caseListCacheEntry struct {
+	epoch uint64
+	items []domain.AccessionCase
 }
 
 func New(store *repository.Store) *Service {
-	return &Service{store: store, now: time.Now, id: newID}
+	return &Service{store: store, now: time.Now, id: newID, caseListCache: make(map[domain.Status]caseListCacheEntry)}
 }
 
 func newID(prefix string) string {
@@ -72,5 +81,36 @@ func (s *Service) mutate(caseID string, ctx Context, action string, payload any,
 	if err != nil {
 		return nil, mapStoreError(err)
 	}
+	s.invalidateCaseLists()
 	return decodeCase(raw)
+}
+
+func (s *Service) invalidateCaseLists() {
+	s.caseListMu.Lock()
+	s.caseListEpoch++
+	clear(s.caseListCache)
+	s.caseListMu.Unlock()
+}
+
+func cloneCaseList(items []domain.AccessionCase) []domain.AccessionCase {
+	return append([]domain.AccessionCase(nil), items...)
+}
+
+func (s *Service) cachedCaseList(status domain.Status) ([]domain.AccessionCase, bool, uint64) {
+	s.caseListMu.RLock()
+	defer s.caseListMu.RUnlock()
+	entry, ok := s.caseListCache[status]
+	if !ok || entry.epoch != s.caseListEpoch {
+		return nil, false, s.caseListEpoch
+	}
+	return cloneCaseList(entry.items), true, s.caseListEpoch
+}
+
+func (s *Service) rememberCaseList(status domain.Status, epoch uint64, items []domain.AccessionCase) {
+	s.caseListMu.Lock()
+	defer s.caseListMu.Unlock()
+	if epoch != s.caseListEpoch {
+		return
+	}
+	s.caseListCache[status] = caseListCacheEntry{epoch: epoch, items: cloneCaseList(items)}
 }

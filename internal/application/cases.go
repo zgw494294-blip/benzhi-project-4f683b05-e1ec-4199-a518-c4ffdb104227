@@ -26,6 +26,7 @@ func (s *Service) CreateCase(cmd CreateCaseCommand) (*domain.AccessionCase, erro
 	if err != nil {
 		return nil, mapStoreError(err)
 	}
+	s.invalidateCaseLists()
 	return decodeCase(result)
 }
 

@@ -36,5 +36,6 @@ func (s *Service) Approve(caseID string, cmd ApproveCommand) (*domain.AccessionC
 	if err != nil {
 		return nil, mapStoreError(err)
 	}
+	s.invalidateCaseLists()
 	return decodeCase(raw)
 }
